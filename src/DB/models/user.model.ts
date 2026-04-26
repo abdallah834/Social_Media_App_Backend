@@ -1,4 +1,4 @@
-import { HydratedDocument, model, models, Schema } from "mongoose";
+import { HydratedDocument, model, models, Schema, Types } from "mongoose";
 import { IUser } from "../../common/interfaces";
 import { GenderEnum, RoleEnum } from "../../common/enums";
 // import { BadRequestException } from "../../common/exceptions";
@@ -9,9 +9,11 @@ const userSchema = new Schema<IUser>(
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
     email: { type: String, unique: true, required: true },
-    password: { type: String, required: true },
+    password: { type: String },
     phone: { type: String, maxLength: 67 },
     bio: { type: String, maxLength: 200 },
+    slug: { type: String, required: true },
+    friends: [{ type: Types.ObjectId, ref: "User" }],
     DOB: { type: Date, required: false },
     profileImage: { type: String },
     coverImages: { type: [String] },
@@ -30,9 +32,6 @@ const userSchema = new Schema<IUser>(
       default: GenderEnum.MALE,
     },
     provider: { type: Number, default: 0 },
-    extra: {
-      _name: String,
-    },
   },
   {
     timestamps: true,
@@ -78,10 +77,10 @@ userSchema.pre(
 
     /////////////// to check if a document wasn't already stored in the data base or is newly created by a user we use this.isNew
     ///////ex:to check new posts.
-    console.log(this.isNew);
+    // console.log(this.isNew);
     this.wasNew = this.isNew;
     if (this.isModified("password")) {
-      this.password = await generateHash(this.password);
+      this.password = await generateHash(this.password as string);
     }
 
     if (this.phone && this.isModified("phone")) {
@@ -138,7 +137,7 @@ userSchema.post("insertMany", function (docs) {
 //////////////////////// Find
 userSchema.pre(["findOne", "find"], function () {
   //////// to check search query or filter
-  console.log(this.getFilter());
+  // console.log(this.getFilter());
   const query = this.getFilter();
   if (query.paranoid === false) {
     this.setQuery({ ...query });
@@ -176,4 +175,4 @@ userSchema.pre(["deleteOne", "findOneAndDelete"], function () {
     this.setQuery({ deletedAt: { $exists: true }, ...query });
   }
 });
-export const userModel = models.User || model<IUser>("user", userSchema);
+export const userModel = models.User || model<IUser>("User", userSchema);

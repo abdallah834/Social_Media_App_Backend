@@ -15,6 +15,8 @@ export const login = {
     password: z.string({
       error: "Password is required",
     }),
+    // FCM has to be optional because notifications might be disabled by user
+    FCM: z.string().optional(),
   }),
 };
 export const signup = {

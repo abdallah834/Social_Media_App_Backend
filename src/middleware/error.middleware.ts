@@ -9,6 +9,9 @@ export const globalErrorHandler = (
   res: Response,
   next: NextFunction,
 ) => {
+  if (err.name === "MulterError") {
+    err.statusCode = 400;
+  }
   res.status(err.statusCode ?? 500).json({
     Error: err.message || "Internal server error",
     Stack: err.stack,

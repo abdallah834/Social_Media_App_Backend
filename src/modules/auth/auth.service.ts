@@ -1,5 +1,10 @@
+import {
+  NotificationService,
+  notificationService,
+} from "./../../common/services/notification/notification.service";
 // import { BadRequestException } from "../../common/exceptions";
 import { OAuth2Client, TokenPayload } from "google-auth-library";
+import { WEB_CLIENT_ID } from "../../common/config/config";
 import { EmailConfig, EmailEnum } from "../../common/enums";
 import { ProviderEnums } from "../../common/enums/provider.enums";
 import {
@@ -23,16 +28,17 @@ import {
   resendConfirmationEmailDto,
   SignupDto,
 } from "./auth.dto";
-import { WEB_CLIENT_ID } from "../../common/config/config";
 
 class AuthService {
   private readonly userRepo: UserRepo;
   private readonly redis: RedisService;
   private readonly tokenService: TokenService;
+  private readonly notification: NotificationService;
   constructor() {
     this.userRepo = new UserRepo();
     this.redis = redisService;
     this.tokenService = new TokenService();
+    this.notification = notificationService;
   }
   async signup({
     username,
@@ -55,6 +61,7 @@ class AuthService {
         data: {
           username,
           email,
+          slug: username.split(" ").join("-"),
           password: password,
           phone: phone ? phone : null,
         },
@@ -69,10 +76,11 @@ class AuthService {
         title: "Email verification",
       });
     });
+
     return user;
   }
   async login(
-    { email, password }: LoginDto,
+    { email, password, FCM }: LoginDto,
     issuer: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const user = await this.userRepo.findOne({
@@ -84,11 +92,11 @@ class AuthService {
     });
     if (!user) {
       throw new NotFoundException(
-        "Please make sure to verify you account before login",
+        "Please make sure to verify your account before login",
       );
     }
 
-    if (!(await compareHash(user.password, password))) {
+    if (!(await compareHash(user.password as string, password))) {
       throw new BadRequestException("Invalid login credentials");
     }
 
@@ -103,7 +111,22 @@ class AuthService {
     //   });
     //   return "2FA";
     // }
+    // handling multiple FCM tokens
+    if (FCM) {
+      await this.redis.addFCM(user.id as string, FCM);
+      const tokens = await this.redis.getFCMs(user.id);
+      if (tokens.length) {
+        const currentDate = new Date().toLocaleString().split(",");
 
+        await this.notification.sendMultipleNotifications({
+          tokens,
+          data: {
+            title: "Logged in successfully",
+            body: `Logged in on ${currentDate[0]} at ${currentDate[1]}`,
+          },
+        });
+      }
+    }
     //////////////////////////////////////////// using a secret key based on the user's role (admin | user)
     // return await createLoginTokens(user, issuer);
     return this.tokenService.createLoginTokens(user, issuer);

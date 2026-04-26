@@ -1,5 +1,9 @@
+import { Types } from "mongoose";
 import { z } from "zod";
 export const generalValidationFields = {
+  id: z.string().refine((id) => {
+    return Types.ObjectId.isValid(id);
+  }, "Invalid ID"),
   username: z.coerce
     .string({ error: "Make sure to include a valid username" })
     .min(2, { error: "Minimum characters are 2" })
@@ -22,4 +26,36 @@ export const generalValidationFields = {
   otp: z.string("OTP code is required").regex(/^\d{6}$/, {
     error: "Make sure to enter a valid OTP code",
   }),
+  file: function (mimeType: string[]) {
+    return z
+      .strictObject({
+        fieldname: z.string(),
+        originalname: z.string(),
+        encoding: z.string(),
+        mimetype: z.enum(mimeType),
+        buffer: z.any().optional(),
+        path: z.string().optional(),
+        size: z.number(),
+      })
+      .superRefine((args, ctx) => {
+        if (!args.path && !args.buffer) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["buffer"],
+            message:
+              "Either a path or a buffer is needed in order to upload an attachment",
+          });
+        }
+      });
+  },
 };
+
+export const paginationValidationSchema = {
+  query: z.strictObject({
+    page: z.coerce.string().optional(),
+    size: z.coerce.string().optional(),
+    search: z.string().optional(),
+  }),
+};
+
+export type PaginateDTO = z.infer<typeof paginationValidationSchema.query>;

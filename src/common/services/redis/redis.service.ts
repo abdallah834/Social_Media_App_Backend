@@ -192,5 +192,28 @@ export class RedisService {
   unverifiedAccountDuration(email: string): string {
     return `User::AccountTTL::${email}`;
   }
+  ///////////////////////////Storing FCM Tokens
+  FCM_key(userId: Types.ObjectId | string) {
+    return `user:FCM:${userId}`;
+  }
+  async addFCM(userId: string | Types.ObjectId, FCMToken: string) {
+    return await this.client.sadd(this.FCM_key(userId), FCMToken);
+  }
+
+  async removeFCM(userId: string | Types.ObjectId, FCMToken: string) {
+    return await this.client.srem(this.FCM_key(userId), FCMToken);
+  }
+
+  async getFCMs(userId: string | Types.ObjectId) {
+    return await this.client.smembers(this.FCM_key(userId));
+  }
+
+  async hasFCMs(userId: string | Types.ObjectId) {
+    return await this.client.scard(this.FCM_key(userId));
+  }
+
+  async removeFCMUser(userId: string | Types.ObjectId) {
+    return await this.client.del(this.FCM_key(userId));
+  }
 }
 export const redisService = new RedisService();

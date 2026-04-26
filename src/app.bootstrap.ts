@@ -1,55 +1,39 @@
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import express from "express";
-import { mongoDBConnection } from "./DB/db.connections";
-import { userModel } from "./DB/models";
 import { PORT } from "./common/config/config";
-import { GenderEnum } from "./common/enums/user.enums";
 import { redisService } from "./common/services/redis";
+import { mongoDBConnection } from "./DB/db.connections";
 import { globalErrorHandler } from "./middleware";
-import { authRouter } from "./modules";
+import { authRouter, gqlSchema, postRouter } from "./modules";
 import { userRouter } from "./modules/user";
-import { ProviderEnums } from "./common/enums";
-import { UserRepo } from "./DB/repository/user.repo";
-import { Types } from "mongoose";
+import { commentRouter } from "./modules/comment";
+import { createHandler } from "graphql-http/lib/use/express";
 
+// Takes a function following the common error-first callback style, i.e. taking an (err, value) => ... callback as the last argument, and returns a version that returns promises.
+// const s3WriteStream = promisify(pipeline);
 export const bootstrap = async () => {
   const app: Express = express();
   //////////// DB connections
   await mongoDBConnection();
   await redisService.connect();
-  // await new userModel({
-  //   username: "test username",
-  //   password: "A12091259ajASF%2",
-  //   // phone: "01245152124",
-  //   provider: ProviderEnums.GOOGLE,
-  //   email: `${Date.now()}@gmail.com`,
-  //   paranoid: true,
-  //   extra: {
-  //     _name: "lol lol",
-  //   },
-  // }).save();
-  const userRepository = new UserRepo();
-  const user = await userRepository.deleteOne({
-    filter: {
-      _id: Types.ObjectId.createFromHexString("69e3ee560e844d1bc1efb5dd"),
-      force: true,
-    },
-  });
-  console.log(user);
-
-  // await user.updateOne({ gender: GenderEnum.FEMALE });
   //////////// global middlewares
   app.use(cors(), express.json());
+
+  //////////////////using GQL
+  app.all("/graphql", createHandler({ schema: gqlSchema }));
   //////////// APIs
   app.use("/auth", authRouter);
   app.use("/user", userRouter);
+  app.use("/post", postRouter);
+  app.use("/comment", commentRouter);
+
   ////////////// Invalid Routing
   app.use("/*dummy", (req, res, next) => {
     return res.status(404).json({ Error: "Invalid route" });
   });
   app.get("/", (req: Request, res: Response, next: NextFunction): void => {
-    res.status(200).json({ Success: "Hello World" });
+    res.status(200).json({ Success: "Landing page" });
   });
   ////////////// global error handling
   app.use(globalErrorHandler);
@@ -63,3 +47,5 @@ export const bootstrap = async () => {
     }
   });
 };
+
+//eMeK_PIEj40JJ9mwkXTRrO:APA91bGQ1pCAJV26me1BUfVhuYPwDUm4EQAWTFmkJYI_y3WvMLoyaRo_irV_-il2vX8Rg6vPn6r1Ymzpttqbdg6QIVnRXWvgQS4cN1TiSRm5Y8Is6MSrA_s

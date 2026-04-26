@@ -17,7 +17,7 @@ export const authentication = (tokenType: TokenType = TokenType.ACCESS) => {
       throw new BadRequestException("Missing authorization parts");
     }
     switch (flag) {
-      default:
+      default: {
         // "Bearer"
         const { decodedToken, userAccount } = await tokenService.decodeToken({
           token,
@@ -26,6 +26,7 @@ export const authentication = (tokenType: TokenType = TokenType.ACCESS) => {
         req.user = userAccount;
         req.decoded = decodedToken;
         break;
+      }
     }
     next();
   };
