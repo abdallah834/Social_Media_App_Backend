@@ -58,3 +58,14 @@ export const GqlValidation = async <T>(
   }
   return true;
 };
+export const SocketIoValidation = <T>(schema: ZodType, args: T): boolean => {
+  const validationResult = schema.safeParse(args);
+  if (!validationResult.success) {
+    throw new BadRequestException("Validation error", {
+      issues: validationResult.error.issues.map((issue) => {
+        return { path: issue.path, message: issue.message };
+      }),
+    });
+  }
+  return true;
+};

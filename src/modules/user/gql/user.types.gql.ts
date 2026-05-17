@@ -39,8 +39,8 @@ export const OneUserType: GraphQLObjectType = new GraphQLObjectType({
     _id: {
       type: new GraphQLNonNull(GraphQLID),
       resolve: (parent: HydratedDocument<IUser>) => {
-        console.log(parent);
-        return parent.username;
+        // console.log(parent);
+        return parent._id;
       },
     },
     firstName: { type: new GraphQLNonNull(GraphQLString) },

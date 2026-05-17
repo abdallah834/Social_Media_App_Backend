@@ -13,7 +13,7 @@ export class UserResolver {
     parent: unknown,
     args: { search?: string },
     /////////// destructuring the current user data along with their decoded JWTPayload info from the bootstrap auth middleware.
-    { user, decodedToken }: IAuthenticatedUser,
+    { user, decoded }: IAuthenticatedUser,
   ) => {
     //authentication
     //validation

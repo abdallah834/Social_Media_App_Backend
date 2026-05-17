@@ -11,8 +11,11 @@ import {
 import { authentication, authorization } from "../../middleware";
 import { endpoint } from "./user.authorization";
 import userService from "./user.service";
+import { chatRouter } from "../chat";
 
 const router = Router();
+router.use("/:userId/chat", chatRouter);
+
 router.get(
   "/profile",
   authentication(),
@@ -53,7 +56,7 @@ router.post(
     );
     return successResponse({
       res,
-      message: "Updated profile image successfully",
+      message: "Token rotation done",
       data,
     });
   },

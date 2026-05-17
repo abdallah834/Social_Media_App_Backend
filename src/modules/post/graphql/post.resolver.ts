@@ -19,7 +19,7 @@ export class PostResolver {
   listPosts = async (
     parent: unknown,
     args: PaginateDTO,
-    { user, decodedToken }: IAuthenticatedUser,
+    { user, decoded }: IAuthenticatedUser,
   ) => {
     GQLAuthorization(endpoint.profile, user);
     await GqlValidation<PaginateDTO>(paginationValidationSchema.query, args);
@@ -29,7 +29,7 @@ export class PostResolver {
   reactToPost = async (
     parent: unknown,
     { postId, react }: ReactToPostGQLArgsDTO,
-    { user, decodedToken }: IAuthenticatedUser,
+    { user, decoded }: IAuthenticatedUser,
   ) => {
     await GqlValidation<ReactToPostGQLArgsDTO>(gqlReactToPost, {
       postId,

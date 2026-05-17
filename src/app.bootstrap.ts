@@ -1,14 +1,15 @@
 import cors from "cors";
 import type { Express, NextFunction, Request, Response } from "express";
 import express from "express";
+import { createHandler } from "graphql-http/lib/use/express";
 import { PORT } from "./common/config/config";
 import { redisService } from "./common/services/redis";
 import { mongoDBConnection } from "./DB/db.connections";
 import { authentication, globalErrorHandler } from "./middleware";
-import { authRouter, gqlSchema, postRouter } from "./modules";
-import { userRouter } from "./modules/user";
+import { authRouter, gqlSchema, postRouter, realtimeGateway } from "./modules";
 import { commentRouter } from "./modules/comment";
-import { createHandler } from "graphql-http/lib/use/express";
+import { userRouter } from "./modules/user";
+import { chatRouter } from "./modules/chat";
 
 // Takes a function following the common error-first callback style, i.e. taking an (err, value) => ... callback as the last argument, and returns a version that returns promises.
 // const s3WriteStream = promisify(pipeline);
@@ -37,6 +38,7 @@ export const bootstrap = async () => {
   app.use("/user", userRouter);
   app.use("/post", postRouter);
   app.use("/comment", commentRouter);
+  app.use("/chat", chatRouter);
 
   ////////////// Invalid Routing
   app.use("/*dummy", (req, res, next) => {
@@ -49,13 +51,12 @@ export const bootstrap = async () => {
   app.use(globalErrorHandler);
   ////////////// checking port connection
 
-  app.listen(PORT, (err) => {
+  const httpServer = app.listen(PORT, (err) => {
     try {
       console.log("app is running on port 3100");
     } catch (error) {
       console.error(err);
     }
   });
+  realtimeGateway.initializeIo(httpServer);
 };
-
-//eMeK_PIEj40JJ9mwkXTRrO:APA91bGQ1pCAJV26me1BUfVhuYPwDUm4EQAWTFmkJYI_y3WvMLoyaRo_irV_-il2vX8Rg6vPn6r1Ymzpttqbdg6QIVnRXWvgQS4cN1TiSRm5Y8Is6MSrA_s

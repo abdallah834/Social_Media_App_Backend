@@ -191,8 +191,9 @@ export class RedisService {
   }
   unverifiedAccountDuration(email: string): string {
     return `User::AccountTTL::${email}`;
-  }
-  ///////////////////////////Storing FCM Tokens
+  } //////////////////////////////////////////////////////
+  /////////////////////////// Storing FCM Tokens
+  //////////////////////////////////////////////////////
   FCM_key(userId: Types.ObjectId | string) {
     return `user:FCM:${userId}`;
   }
@@ -214,6 +215,31 @@ export class RedisService {
 
   async removeFCMUser(userId: string | Types.ObjectId) {
     return await this.client.del(this.FCM_key(userId));
+  }
+  //////////////////////////////////////////////////////
+  ////////////////////////////// socketIo
+  //////////////////////////////////////////////////////
+  socketKey(userId: string | Types.ObjectId) {
+    return `user:sockets:${userId.toString()}`;
+  }
+  async addSocket(userId: string | Types.ObjectId, socketId: string) {
+    return await this.client.sadd(this.socketKey(userId), socketId);
+  }
+
+  async removeSocket(userId: string | Types.ObjectId, socketId: string) {
+    return await this.client.srem(this.socketKey(userId), socketId);
+  }
+
+  async getSockets(userId: string | Types.ObjectId) {
+    return await this.client.smembers(this.socketKey(userId));
+  }
+
+  async hasSockets(userId: string | Types.ObjectId) {
+    return await this.client.scard(this.socketKey(userId));
+  }
+
+  async removeUserSockets(userId: string | Types.ObjectId) {
+    return await this.client.del(this.socketKey(userId));
   }
 }
 export const redisService = new RedisService();

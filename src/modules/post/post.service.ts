@@ -26,6 +26,7 @@ import {
   UpdatePostBodyDto,
   UpdatePostParamsDto,
 } from "./post.dto";
+import { realtimeGateway, RealtimeGateWay } from "../realtime";
 
 export class PostService {
   private populate: PopulateOptions[] = [
@@ -34,6 +35,9 @@ export class PostService {
     },
     {
       path: "tags",
+    },
+    {
+      path: "createdBy",
     },
     {
       path: "comments",
@@ -45,12 +49,14 @@ export class PostService {
   private readonly notification: NotificationService;
   private readonly postRepo: PostRepo;
   private readonly s3: S3Service;
+  private readonly realTime: RealtimeGateWay;
   constructor() {
     this.userRepo = new UserRepo();
     this.redis = redisService;
     this.postRepo = new PostRepo();
     this.notification = notificationService;
     this.s3 = s3Service;
+    this.realTime = realtimeGateway;
   }
   async createPost(
     { availability, content, files, tags }: CreatePostBodyDto,
@@ -280,21 +286,31 @@ export class PostService {
     // const currentPost = await this.postRepo.findOne({
     //   filter: { likes:{} },
     // });
-    // console.log(currentPost);
+    const reactAsNumber = Number(react);
+    console.log(user);
     const post = await this.postRepo.findOneAndUpdate({
       filter: { _id: postId, $or: getPostsAvailability(user) },
       update: {
         // implementing like / remove like functionality
-        ...(Number(react) > ReactEnums.REMOVE_LIKE
+        ...(reactAsNumber > ReactEnums.REMOVE_LIKE
           ? { $addToSet: { likes: user._id } }
           : { $pull: { likes: user._id } }),
       },
       populate: this.populate,
     });
+
     if (!post) {
       throw new NotFoundException(
         "You are not eligible to like this user's post",
       );
+    }
+    const postOwner = post.createdBy as HydratedDocument<IUser>;
+    const socketIds = await this.redis.getSockets(postOwner._id);
+    if (socketIds.length || reactAsNumber > 1) {
+      this.realTime
+        .getIo()
+        .to(socketIds)
+        .emit("likePost", { postId, userId: user._id, reactAsNumber });
     }
     return post.toJSON();
   }

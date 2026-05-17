@@ -31,7 +31,7 @@ export const singlePostType = new GraphQLObjectType({
     tags: {
       /////// tags should include tagged user profiles
       // type: new GraphQLList(OneUserType),
-      type: new GraphQLList(GraphQLID),
+      type: new GraphQLList(OneUserType),
     },
     availability: { type: gqlAvailabilityEnum },
     createdBy: { type: new GraphQLNonNull(OneUserType) },

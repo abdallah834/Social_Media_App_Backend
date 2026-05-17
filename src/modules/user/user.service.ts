@@ -1,12 +1,13 @@
 import { HydratedDocument, Types } from "mongoose";
 import { REFRESH_TOKEN_EXPIRATION_TIME } from "../../common/config/config";
 import {
+  ChatParticipantsEnum,
   LoggedOutDevices,
   StorageApproachEnum,
   UploadApproachEnum,
 } from "../../common/enums";
 import { ConflictException, NotFoundException } from "../../common/exceptions";
-import { IUser } from "../../common/interfaces";
+import { IChat, IUser } from "../../common/interfaces";
 import {
   redisService,
   RedisService,
@@ -14,6 +15,7 @@ import {
   S3Service,
   TokenService,
 } from "../../common/services";
+import { ChatRepo } from "../../DB/repository";
 import { UserRepo } from "../../DB/repository/user.repo";
 
 export class UserService {
@@ -21,23 +23,35 @@ export class UserService {
   private readonly redis: RedisService;
   private readonly tokenService: TokenService;
   private readonly s3: S3Service;
+  private readonly chatRepo: ChatRepo;
   constructor() {
     this.userRepo = new UserRepo();
     this.tokenService = new TokenService();
     this.redis = redisService;
     this.s3 = s3Service;
+    this.chatRepo = new ChatRepo();
   }
-  async profile(user: HydratedDocument<IUser>): Promise<any> {
+  async profile(
+    user: HydratedDocument<IUser>,
+  ): Promise<{ user: IUser; groups: HydratedDocument<IChat>[] }> {
     const userProfile = await this.userRepo.findOne({
       filter: {
         _id: user._id,
       },
+      projection: "username email coverImages firstName lastName friends",
       options: { populate: [{ path: "friends" }] },
     });
     if (!userProfile) {
       throw new NotFoundException("No user matches this info");
     }
-    return userProfile.toJSON();
+    // getting all logged in user groups
+    const groups = await this.chatRepo.find({
+      filter: {
+        participants: { $in: [user._id] },
+        type: ChatParticipantsEnum.ovm,
+      },
+    });
+    return { user: userProfile.toJSON(), groups };
   }
   async profileImage(
     {
@@ -101,6 +115,7 @@ export class UserService {
       });
     }
     await user.save();
+
     return user.toJSON();
   }
   async logout(
@@ -150,14 +165,13 @@ export class UserService {
     issuer: string,
   ) {
     // checking if the token is about to expire (5mins before expiration at least 25min passed)
-
-    if (Date.now() - iat < 25 * 60 * 1000) {
+    if (Date.now() - iat * 1000 >= 25 * 60 * 1000) {
       throw new ConflictException("Current access token is still valid");
     }
     await this.tokenService.createRevokeToken({
       userId: sub,
       jti,
-      ttl: iat + Number(REFRESH_TOKEN_EXPIRATION_TIME),
+      ttl: Number(iat) + Number(REFRESH_TOKEN_EXPIRATION_TIME),
     });
 
     return await this.tokenService.createLoginTokens(user, issuer);
