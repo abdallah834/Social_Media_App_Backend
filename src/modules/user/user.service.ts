@@ -30,11 +30,14 @@ export class UserService {
   async profile(user: HydratedDocument<IUser>): Promise<any> {
     const userProfile = await this.userRepo.findOne({
       filter: {
-        _id: Types.ObjectId.createFromHexString("69f4daf1628daa25b9dc09b1"),
+        _id: user._id,
       },
       options: { populate: [{ path: "friends" }] },
     });
-    return userProfile;
+    if (!userProfile) {
+      throw new NotFoundException("No user matches this info");
+    }
+    return userProfile.toJSON();
   }
   async profileImage(
     {

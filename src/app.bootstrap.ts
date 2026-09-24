@@ -4,7 +4,7 @@ import express from "express";
 import { PORT } from "./common/config/config";
 import { redisService } from "./common/services/redis";
 import { mongoDBConnection } from "./DB/db.connections";
-import { globalErrorHandler } from "./middleware";
+import { authentication, globalErrorHandler } from "./middleware";
 import { authRouter, gqlSchema, postRouter } from "./modules";
 import { userRouter } from "./modules/user";
 import { commentRouter } from "./modules/comment";
@@ -21,7 +21,17 @@ export const bootstrap = async () => {
   app.use(cors(), express.json());
 
   //////////////////using GQL
-  app.all("/graphql", createHandler({ schema: gqlSchema }));
+  app.all(
+    "/graphql",
+    authentication(),
+    createHandler({
+      schema: gqlSchema,
+      context: (req) => ({
+        user: req.raw.user,
+        decodedToken: req.raw.decoded,
+      }),
+    }),
+  );
   //////////// APIs
   app.use("/auth", authRouter);
   app.use("/user", userRouter);

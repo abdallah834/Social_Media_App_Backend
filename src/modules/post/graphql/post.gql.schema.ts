@@ -1,6 +1,6 @@
-import { postListArgs } from "./post.args.gql";
+import { postListArgs, postReactArgs } from "./post.args.gql";
 import { PostResolver, postResolver } from "./post.resolver";
-import { postListType } from "./post.types.gql";
+import { postListType, reactToPost } from "./post.types.gql";
 
 export class PostGQLSchema {
   private postResolver: PostResolver;
@@ -20,13 +20,11 @@ export class PostGQLSchema {
   }
   registerMutation() {
     return {
-      // fields
-      // postList: {
-      //   type: postListType,
-      //   args: postListArgs,
-      //   /////////// the argument is resolve not resolver...
-      //   resolve: this.postResolver.listPosts,
-      // },
+      reactToPost: {
+        type: reactToPost,
+        args: postReactArgs,
+        resolve: this.postResolver.reactToPost,
+      },
     };
   }
 }

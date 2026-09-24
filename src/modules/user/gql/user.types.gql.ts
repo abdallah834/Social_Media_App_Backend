@@ -8,6 +8,8 @@ import {
   GraphQLString,
 } from "graphql";
 import { GenderEnum, ProviderEnums, RoleEnum } from "../../../common/enums";
+import { HydratedDocument } from "mongoose";
+import { IUser } from "../../../common/interfaces";
 
 export const gqlGenderEnumType = new GraphQLEnumType({
   name: "genderEnumGQL",
@@ -34,7 +36,13 @@ export const OneUserType: GraphQLObjectType = new GraphQLObjectType({
   name: "oneUserType",
   ////////////////////Important!: using lazy loading for fields in order to populate the friends array
   fields: () => ({
-    _id: { type: new GraphQLNonNull(GraphQLID) },
+    _id: {
+      type: new GraphQLNonNull(GraphQLID),
+      resolve: (parent: HydratedDocument<IUser>) => {
+        console.log(parent);
+        return parent.username;
+      },
+    },
     firstName: { type: new GraphQLNonNull(GraphQLString) },
     lastName: { type: new GraphQLNonNull(GraphQLString) },
     email: { type: new GraphQLNonNull(GraphQLString) },

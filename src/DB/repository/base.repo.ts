@@ -116,17 +116,17 @@ export abstract class DataBaseRepo<TRawDoc> {
     projection,
     options = {},
     page = "0",
-    size = "3",
+    limit = "3",
   }: {
     filter?: QueryFilter<TRawDoc> | undefined;
     projection?: ProjectionType<TRawDoc> | null | undefined;
     options?: QueryOptions<TRawDoc>;
     page?: string | undefined;
-    size?: string | undefined;
+    limit?: string | undefined;
   }): Promise<IPaginate<TRawDoc>> {
     let count = -1;
     const pageInt = parseInt(page);
-    const sizeInt = parseInt(size);
+    const sizeInt = parseInt(limit);
     if (pageInt > 0) {
       options.skip = (pageInt - 1) * sizeInt;
       options.limit = sizeInt;
@@ -138,7 +138,7 @@ export abstract class DataBaseRepo<TRawDoc> {
       ...(pageInt > 0
         ? {
             currentPage: pageInt,
-            size: sizeInt,
+            limit: sizeInt,
             pages: Math.ceil(count / sizeInt),
           }
         : {}),
@@ -204,22 +204,24 @@ export abstract class DataBaseRepo<TRawDoc> {
     filter,
     update,
     options = { returnDocument: "after" },
+    populate = [],
   }: {
     filter: QueryFilter<TRawDoc>;
     update: UpdateQuery<TRawDoc>;
     options?: (QueryOptions<TRawDoc> & ReturnsNewDoc) | null | undefined;
+    populate?: PopulateOptions[];
   }): Promise<HydratedDocument<TRawDoc> | null> {
     if (Array.isArray(update)) {
-      return await this.model.findOneAndUpdate(filter, update, {
-        ...options,
-        updatePipeline: true,
-      });
+      return await this.model
+        .findOneAndUpdate(filter, update, {
+          ...options,
+          updatePipeline: true,
+        })
+        .populate(populate);
     }
-    return await this.model.findOneAndUpdate(
-      filter,
-      { ...update, $inc: { __v: 1 } },
-      options,
-    );
+    return await this.model
+      .findOneAndUpdate(filter, { ...update, $inc: { __v: 1 } }, options)
+      .populate(populate);
   }
   async findByIdAndUpdate({
     _id,

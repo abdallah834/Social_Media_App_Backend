@@ -53,7 +53,7 @@ export const generalValidationFields = {
 export const paginationValidationSchema = {
   query: z.strictObject({
     page: z.coerce.string().optional(),
-    size: z.coerce.string().optional(),
+    limit: z.coerce.string().optional(),
     search: z.string().optional(),
   }),
 };

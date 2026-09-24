@@ -1,5 +1,6 @@
-import { HydratedDocument, Types } from "mongoose";
+import { HydratedDocument, PopulateOptions, Types } from "mongoose";
 import { randomUUID } from "node:crypto";
+import { ReactEnums } from "../../common/enums";
 import {
   BadRequestException,
   NotFoundException,
@@ -12,6 +13,7 @@ import {
   RedisService,
 } from "../../common/services";
 import { getPostsAvailability } from "../../common/utils/post";
+import { PaginateDTO } from "../../common/validation";
 import { PostRepo, UserRepo } from "../../DB/repository";
 import {
   S3Service,
@@ -24,10 +26,20 @@ import {
   UpdatePostBodyDto,
   UpdatePostParamsDto,
 } from "./post.dto";
-import { PaginateDTO } from "../../common/validation";
-import { ReactEnums } from "../../common/enums";
 
 export class PostService {
+  private populate: PopulateOptions[] = [
+    {
+      path: "likes",
+    },
+    {
+      path: "tags",
+    },
+    {
+      path: "comments",
+      populate: [{ path: "replies", populate: [{ path: "reply" }] }],
+    },
+  ];
   private readonly userRepo: UserRepo;
   private readonly redis: RedisService;
   private readonly notification: NotificationService;
@@ -239,12 +251,12 @@ export class PostService {
     return updatedPost.toJSON();
   }
   async allPosts(
-    { size, search, page }: PaginateDTO,
+    { limit, search, page }: PaginateDTO,
     user: HydratedDocument<IUser>,
   ): Promise<IPaginate<IPost>> {
     const posts = await this.postRepo.paginate({
       filter: {
-        $or: await getPostsAvailability(user),
+        $or: getPostsAvailability(user),
         ...(search?.length
           ? // $options: "i" indicates that hte search is insensitive
             { content: { $regex: search, $options: "i" } }
@@ -252,10 +264,10 @@ export class PostService {
         // exclude: { $in: [user._id] },
       },
       page,
-      size,
+      limit,
       options: {
         // populating on virtual fields
-        populate: [{ path: "comments", populate: [{ path: "replies" }] }],
+        populate: this.populate,
       },
     });
     return posts;
@@ -274,9 +286,10 @@ export class PostService {
       update: {
         // implementing like / remove like functionality
         ...(Number(react) > ReactEnums.REMOVE_LIKE
-          ? { $addToSet: { likes: { user: user._id, react: Number(react) } } }
-          : { $pull: { likes: user._id, react } }),
+          ? { $addToSet: { likes: user._id } }
+          : { $pull: { likes: user._id } }),
       },
+      populate: this.populate,
     });
     if (!post) {
       throw new NotFoundException(

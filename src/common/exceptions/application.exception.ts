@@ -38,3 +38,8 @@ export class UnauthorizedException extends ApplicationException {
     super(message, 401, cause);
   }
 }
+export class ForbiddenException extends ApplicationException {
+  constructor(message: string = "Internal server error", cause?: unknown) {
+    super(message, 403, cause);
+  }
+}

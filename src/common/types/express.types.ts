@@ -9,3 +9,8 @@ declare global {
     }
   }
 }
+
+export interface IAuthenticatedUser {
+  user: HydratedDocument<IUser>;
+  decodedToken: JwtPayload;
+}

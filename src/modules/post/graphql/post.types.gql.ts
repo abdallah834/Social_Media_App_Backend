@@ -29,7 +29,9 @@ export const singlePostType = new GraphQLObjectType({
       type: new GraphQLList(OneUserType),
     },
     tags: {
-      type: new GraphQLList(OneUserType),
+      /////// tags should include tagged user profiles
+      // type: new GraphQLList(OneUserType),
+      type: new GraphQLList(GraphQLID),
     },
     availability: { type: gqlAvailabilityEnum },
     createdBy: { type: new GraphQLNonNull(OneUserType) },
@@ -57,7 +59,13 @@ export const postListType = new GraphQLObjectType({
     },
   },
 });
-
+export const reactToPost = new GraphQLObjectType({
+  name: "ReactToPostResponse",
+  fields: {
+    message: { type: new GraphQLNonNull(GraphQLString) },
+    data: { type: singlePostType },
+  },
+});
 // new GraphQLList(
 //         new GraphQLObjectType({
 //           name: "likesInfo",
