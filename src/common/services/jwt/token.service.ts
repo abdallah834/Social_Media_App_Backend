@@ -106,14 +106,13 @@ export class TokenService {
     //   await this.getTokenSignature(user.role)
     // ).signatures;
 
-    const [accessAndRefreshSigns, audience] = await Promise.all([
-      (await this.getTokenSignature(user.role)).signatures,
-      (await this.getTokenSignature(user.role)).audience,
-    ]);
+    const { signatures, audience } = await this.getTokenSignature(user.role);
 
     const jtId = randomUUID();
     const accessToken = this.sign({
       payload: { sub: user._id },
+      secretOrPrivateKey: signatures.accessSignature,
+
       options: {
         issuer,
         audience: [
@@ -126,7 +125,7 @@ export class TokenService {
     });
     const refreshToken = this.sign({
       payload: { sub: user._id },
-      secretOrPrivateKey: accessAndRefreshSigns.refreshSignature,
+      secretOrPrivateKey: signatures.refreshSignature,
       options: {
         issuer,
         audience: [
