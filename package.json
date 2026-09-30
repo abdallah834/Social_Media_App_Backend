@@ -7,7 +7,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "cross-env NODE_ENV=development concurrently \"tsc --watch\" \"node --watch dist/main.js\"",
-    "prod": "cross-env NODE_ENV=production concurrently \"tsc --watch\" \"node --watch dist/main.js\""
+    "build": "tsc",
+    "start": "node dist/main.js"
   },
   "pnpm": {
     "overrides": {
