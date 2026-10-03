@@ -1,13 +1,13 @@
 import { HydratedDocument, Types } from "mongoose";
-import { REFRESH_TOKEN_EXPIRATION_TIME } from "../../common/config/config";
 import {
   ChatParticipantsEnum,
   LoggedOutDevices,
   StorageApproachEnum,
   UploadApproachEnum,
 } from "../../common/enums";
-import { ConflictException, NotFoundException } from "../../common/exceptions";
+import { NotFoundException } from "../../common/exceptions";
 import { IChat, IUser } from "../../common/interfaces";
+import { IAuthTokenPayload } from "../../common/interfaces/jwtToken.interface";
 import {
   redisService,
   RedisService,
@@ -26,8 +26,8 @@ export class UserService {
   private readonly chatRepo: ChatRepo;
   constructor() {
     this.userRepo = new UserRepo();
-    this.tokenService = new TokenService();
     this.redis = redisService;
+    this.tokenService = new TokenService();
     this.s3 = s3Service;
     this.chatRepo = new ChatRepo();
   }
@@ -121,61 +121,40 @@ export class UserService {
   async logout(
     { flag }: { flag: LoggedOutDevices },
     user: HydratedDocument<IUser>,
-    {
-      jti,
-      iat,
-      sub,
-    }: { jti: string; iat: number; sub: string | Types.ObjectId },
-  ): Promise<number> {
-    let statusCode = 200;
-    // implementing logout from multiple devices or one device
-    switch (flag) {
-      case LoggedOutDevices.ALL:
-        await this.userRepo.findByIdAndUpdate({
-          _id: user._id,
-          update: { changedCredentialsTime: new Date() },
-        });
-        await this.redis.redisDelKeys(
-          await this.redis.redisKeys(this.redis.redisBaseRevokeTokenKey(sub)),
-        );
-        statusCode = 201;
-
-        break;
-
-      default:
-        await this.tokenService.createRevokeToken({
-          userId: sub,
-          jti,
-          ttl: iat + Number(REFRESH_TOKEN_EXPIRATION_TIME),
-        });
-        statusCode = 201;
-        break;
+    { sub, familyId }: Pick<IAuthTokenPayload, "sub" | "familyId">,
+  ): Promise<void> {
+    if (flag === LoggedOutDevices.ALL) {
+      await this.revokeAllSessions(user._id);
+      return;
     }
+    // This device only: kills its access + refresh tokens immediately.
+    await this.tokenService.revokeFamily(sub, familyId);
+    await this.removeUserFCMTokens(user._id);
+  }
+  async revokeAllSessions(userId: string | Types.ObjectId) {
+    const id =
+      typeof userId === "string"
+        ? Types.ObjectId.createFromHexString(userId)
+        : userId;
 
-    return statusCode;
+    await this.userRepo.findByIdAndUpdate({
+      _id: id,
+      update: { $inc: { tokenVersion: 1 } },
+    });
+    await this.removeUserFCMTokens(userId as Types.ObjectId);
   }
 
+  async logoutByToken(token: string): Promise<void> {
+    await this.tokenService.revokeSessionByToken(token);
+  }
   async rotateToken(
     user: HydratedDocument<IUser>,
-    {
-      sub,
-      jti,
-      iat,
-    }: { jti: string; iat: number; sub: string | Types.ObjectId },
+    payload: IAuthTokenPayload,
     issuer: string,
   ) {
-    // checking if the token is about to expire (5mins before expiration at least 25min passed)
-    if (Date.now() - iat * 1000 >= 25 * 60 * 1000) {
-      throw new ConflictException("Current access token is still valid");
-    }
-    await this.tokenService.createRevokeToken({
-      userId: sub,
-      jti,
-      ttl: Number(iat) + Number(REFRESH_TOKEN_EXPIRATION_TIME),
-    });
-
-    return await this.tokenService.createLoginTokens(user, issuer);
+    return this.tokenService.rotate(user, payload, issuer);
   }
+
   async deleteProfile(user: HydratedDocument<IUser>) {
     const userAccount = await this.userRepo.deleteOne({
       filter: { _id: user._id, force: true },
@@ -187,6 +166,11 @@ export class UserService {
       prefix: `Users/${user.id}`,
     });
     return userAccount;
+  }
+  private async removeUserFCMTokens(userId: Types.ObjectId) {
+    const userIdStr = userId.toString();
+    const userExistingFCM = await this.redis.getFCMs(userIdStr);
+    userExistingFCM && (await this.redis.removeFCMUser(userIdStr));
   }
 }
 

@@ -19,6 +19,56 @@ export class RedisService {
     this.client.on("error", (err) => console.error("Redis error:", err));
     this.client.on("ready", () => console.error("Redis is ready to use"));
   }
+
+  ///////////////////////////JWT
+  redisUsedRefreshKey({
+    userId,
+    jti,
+  }: {
+    userId: string | Types.ObjectId;
+    jti: string;
+  }) {
+    return `refresh:used:${userId}:${jti}`;
+  }
+  redisRotationResultKey({
+    userId,
+    jti,
+  }: {
+    userId: string | Types.ObjectId;
+    jti: string;
+  }) {
+    return `refresh:result:${userId}:${jti}`;
+  }
+  redisRevokedFamilyKey({
+    userId,
+    familyId,
+  }: {
+    userId: string | Types.ObjectId;
+    familyId: string;
+  }) {
+    return `family:revoked:${userId}:${familyId}`;
+  }
+  async redisSetNX({
+    key,
+    value,
+    ttl,
+  }: {
+    key: string;
+    value: string;
+    ttl: number;
+  }): Promise<boolean> {
+    if (!Number.isFinite(ttl) || ttl <= 0) {
+      throw new internalServerError(`Invalid TTL for redis key "${key}"`);
+    }
+    try {
+      return (await this.client.set(key, value, "EX", ttl, "NX")) === "OK";
+    } catch (error) {
+      console.error("redisSetNX failed:", error);
+      throw new internalServerError(
+        "Something went wrong with setting the value within redis",
+      );
+    }
+  }
   /////////////////////////// redis operations
   async redisSet({
     key,
@@ -27,14 +77,18 @@ export class RedisService {
   }: {
     key: string;
     value: any;
-    ttl?: number | undefined;
+    ttl?: number;
   }): Promise<string | null> {
+    if (ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
+      throw new internalServerError(`Invalid TTL for redis key "${key}"`);
+    }
     try {
       const data = typeof value === "string" ? value : JSON.stringify(value);
-      return ttl
+      return ttl !== undefined
         ? await this.client.set(key, data, "EX", ttl)
         : await this.client.set(key, data);
     } catch (error) {
+      console.error("redisSet failed:", error);
       throw new internalServerError(
         "Something went wrong with setting the value within redis",
       );
@@ -47,7 +101,7 @@ export class RedisService {
   }: {
     key: string;
     value: string | object;
-    ttl?: number | undefined;
+    ttl: number;
   }): Promise<string | number | null> {
     try {
       // key has to exist before assigning it a different value
@@ -154,15 +208,7 @@ export class RedisService {
 
     return `RevokeToken::${userId.toString()}`;
   }
-  redisRevokeTokenKey({
-    userId,
-    jti,
-  }: {
-    userId: string | Types.ObjectId | undefined;
-    jti: string | undefined;
-  }): string {
-    return `${this.redisBaseRevokeTokenKey(userId)}::${jti}`;
-  }
+
   otpKey(
     email: string,
     { type = EmailEnum.CONFIRM_EMAIL }: { type?: EmailEnum } = {},

@@ -232,9 +232,10 @@ export abstract class DataBaseRepo<TRawDoc> {
     update: UpdateQuery<TRawDoc>;
     options?: (QueryOptions<TRawDoc> & ReturnsNewDoc) | null | undefined;
   }): Promise<HydratedDocument<TRawDoc> | null> {
+    const { $inc, ...rest } = update;
     return await this.model.findByIdAndUpdate(
       _id,
-      { ...update, $inc: { __v: 1 } },
+      { ...rest, $inc: { ...$inc, __v: 1 } },
       options,
     );
   }

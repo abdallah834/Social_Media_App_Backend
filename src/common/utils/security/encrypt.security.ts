@@ -1,6 +1,10 @@
 import crypto from "crypto";
 import { ENCRYPTION_SECRET_KEY, IV_LENGTH } from "../../config/config";
-import { BadRequestException } from "../../exceptions";
+import { BadRequestException, internalServerError } from "../../exceptions";
+
+if (!ENCRYPTION_SECRET_KEY || !IV_LENGTH) {
+  throw new internalServerError("Encryption error");
+}
 
 export const encrypt = async (text: string): Promise<string> => {
   const iv = crypto.randomBytes(IV_LENGTH);

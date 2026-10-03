@@ -5,6 +5,10 @@ import { successResponse } from "../../common/response";
 import { validation } from "../../middleware/validation.middleware";
 import authService from "./auth.service";
 import * as validators from "./auth.validation";
+import userService from "../user/user.service";
+import { LoggedOutDevices, TokenType } from "../../common/enums";
+import { authentication } from "../../middleware";
+import { IAuthTokenPayload } from "../../common/interfaces/jwtToken.interface";
 
 const router = Router();
 ////////////////// System auth
@@ -58,6 +62,44 @@ router.patch(
     });
   },
 );
+router.post(
+  "/rotateToken",
+  authentication(TokenType.REFRESH),
+  async (req, res, next) => {
+    const data = await userService.rotateToken(
+      req.user,
+      req.decoded as IAuthTokenPayload,
+      process.env.ISSUER as string, // fixed issuer, not `${req.protocol}://${req.host}`
+    );
+    return successResponse({ res, message: "Token rotation done", data });
+  },
+);
+
+router.post("/logout", authentication(), async (req, res, next) => {
+  await userService.logout(
+    req.body,
+    req.user,
+    req.decoded as IAuthTokenPayload,
+  );
+  return successResponse({
+    res,
+    message:
+      req.body.flag === LoggedOutDevices.ALL
+        ? "Logged out from all devices successfully"
+        : "Logged out from one device successfully",
+  });
+});
+
+//for users whose access token has already expired send the refresh or expired access token as `Authorization: Bearer <token>`
+router.post("/logout/session", async (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (token) await userService.logoutByToken(token);
+  return successResponse({
+    res,
+    message: "Logged out from one device successfully",
+  });
+});
+
 ////////////////// Google auth
 router.post(
   "/signup/gmail",

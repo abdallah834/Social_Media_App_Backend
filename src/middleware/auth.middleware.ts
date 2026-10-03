@@ -16,6 +16,7 @@ export const authentication = (tokenType: TokenType = TokenType.ACCESS) => {
     if (!flag || !token) {
       throw new BadRequestException("Missing authorization parts");
     }
+    // if()
     switch (flag) {
       default: {
         // "Bearer"

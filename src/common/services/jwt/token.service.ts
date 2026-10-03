@@ -4,6 +4,7 @@ import { HydratedDocument, Types } from "mongoose";
 import { randomUUID } from "node:crypto";
 import {
   ACCESS_TOKEN_EXPIRATION_TIME,
+  REFRESH_ROTATION_GRACE_SECONDS,
   REFRESH_TOKEN_EXPIRATION_TIME,
   SYS_REFRESH_TOKEN_SECRET_KEY,
   SYSTEM_TOKEN_SECRET_KEY,
@@ -11,8 +12,13 @@ import {
   USER_TOKEN_SECRET_KEY,
 } from "../../config/config";
 import { AudienceEnum, RoleEnum } from "../../enums";
-import { BadRequestException, UnauthorizedException } from "../../exceptions";
+import { authError, AuthErrorCode } from "../../enums/jwtTokenErrors.enums";
+import { BadRequestException, ConflictException } from "../../exceptions";
 import { IUser } from "../../interfaces";
+import {
+  IAuthTokenPayload,
+  IJwtTokenPair,
+} from "../../interfaces/jwtToken.interface";
 import { redisService, RedisService } from "../redis";
 import { UserRepo } from "./../../../DB/repository/user.repo";
 import { TokenType } from "./../../enums/token.enums";
@@ -20,6 +26,20 @@ type SignaturesType = {
   accessSignature: string | undefined;
   refreshSignature: string | undefined;
 };
+
+const ACCESS_TTL = Number(ACCESS_TOKEN_EXPIRATION_TIME);
+const REFRESH_TTL = Number(REFRESH_TOKEN_EXPIRATION_TIME);
+const ROTATION_GRACE = Number(REFRESH_ROTATION_GRACE_SECONDS ?? 10);
+for (const [name, value] of Object.entries({
+  ACCESS_TTL,
+  REFRESH_TTL,
+  ROTATION_GRACE,
+})) {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be a positive number of seconds`);
+  }
+}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class TokenService {
   private readonly userRepo: UserRepo;
@@ -44,11 +64,23 @@ export class TokenService {
   verify({
     token,
     secretOrPrivateKey = USER_TOKEN_SECRET_KEY,
+    ignoreExpiration = false,
   }: {
     token: string;
+    ignoreExpiration?: boolean;
+
     secretOrPrivateKey: string | undefined;
-  }): JwtPayload {
-    return jwt.verify(token, secretOrPrivateKey as string) as JwtPayload;
+  }): IAuthTokenPayload {
+    try {
+      return jwt.verify(token, secretOrPrivateKey as string, {
+        ignoreExpiration,
+      }) as IAuthTokenPayload;
+    } catch (err: any) {
+      if (err?.name === "TokenExpiredError") {
+        throw authError("Token expired", AuthErrorCode.TOKEN_EXPIRED);
+      }
+      throw authError("Invalid token", AuthErrorCode.TOKEN_INVALID);
+    }
   }
   ///////////////////// JWT helper functions
 
@@ -78,53 +110,48 @@ export class TokenService {
     return { signatures, audience };
   }
 
-  async getSignatureLevel(
-    tokenType = TokenType.ACCESS,
-    signatureLevel: RoleEnum | undefined,
-  ): Promise<string | undefined> {
-    let signatures = (await this.getTokenSignature(signatureLevel)).signatures;
-    let result;
-    switch (tokenType) {
-      case TokenType.REFRESH:
-        result = signatures.refreshSignature;
-        break;
-      default:
-        result = signatures.accessSignature;
-        break;
+  private getSecret(
+    tokenType: TokenType,
+    audience: number,
+  ): string | undefined {
+    const isSystem = audience === Number(AudienceEnum.SYSTEM);
+    if (tokenType === TokenType.REFRESH) {
+      return isSystem
+        ? SYS_REFRESH_TOKEN_SECRET_KEY
+        : USER_REFRESH_TOKEN_SECRET_KEY;
     }
-    return result;
+    return isSystem ? SYSTEM_TOKEN_SECRET_KEY : USER_TOKEN_SECRET_KEY;
   }
 
   async createLoginTokens(
     user: HydratedDocument<IUser>,
     issuer: string,
-  ): Promise<{
-    accessToken: string;
-    refreshToken: string;
-  }> {
-    // const { accessSignature, refreshSignature, audience } = (
-    //   await this.getTokenSignature(user.role)
-    // ).signatures;
-
+    familyId: string = randomUUID(),
+  ): Promise<IJwtTokenPair> {
     const { signatures, audience } = await this.getTokenSignature(user.role);
 
     const jtId = randomUUID();
-    const accessToken = this.sign({
-      payload: { sub: user._id },
-      secretOrPrivateKey: signatures.accessSignature,
+    const payload = {
+      sub: String(user._id),
+      familyId,
+      ver: user.tokenVersion ?? 0,
+    };
 
+    const accessToken = this.sign({
+      payload,
+      secretOrPrivateKey: signatures.accessSignature,
       options: {
         issuer,
         audience: [
           TokenType.ACCESS as unknown as string,
           audience as unknown as string,
         ],
-        expiresIn: Number(ACCESS_TOKEN_EXPIRATION_TIME),
+        expiresIn: ACCESS_TTL,
         jwtid: jtId,
       },
     });
     const refreshToken = this.sign({
-      payload: { sub: user._id },
+      payload,
       secretOrPrivateKey: signatures.refreshSignature,
       options: {
         issuer,
@@ -132,7 +159,7 @@ export class TokenService {
           TokenType.REFRESH as unknown as string,
           audience as unknown as string,
         ],
-        expiresIn: Number(REFRESH_TOKEN_EXPIRATION_TIME),
+        expiresIn: REFRESH_TTL,
         jwtid: jtId,
       },
     });
@@ -147,77 +174,150 @@ export class TokenService {
     tokenType?: TokenType | undefined;
   }): Promise<{
     userAccount: HydratedDocument<IUser>;
-    decodedToken: JwtPayload;
+    decodedToken: IAuthTokenPayload;
   }> {
-    const decodedToken = jwt.decode(token) as JwtPayload;
-    if (!decodedToken?.aud?.length || decodedToken?.aud?.length <= 1) {
+    const unverified = jwt.decode(token) as JwtPayload | null;
+    // Array.isArray: a string `aud` would otherwise pass the length check.
+    if (!Array.isArray(unverified?.aud) || unverified.aud.length < 2) {
       throw new BadRequestException("Failed to decode token without audience");
     }
-
-    const [decodedTokenType, audienceType] = decodedToken.aud;
-
-    ///////////////
-    const numDecodedTokenType = Number(decodedTokenType);
-    const numAudienceType = Number(audienceType);
-    if (numDecodedTokenType !== tokenType) {
+    const [typeRaw, audienceRaw] = unverified.aud;
+    if (Number(typeRaw) !== tokenType) {
       throw new BadRequestException("Invalid token type");
     }
-    if (
-      decodedToken.jti &&
-      (await this.redisRepo.redisGet(
-        this.redisRepo.redisRevokeTokenKey({
-          userId: decodedToken.sub,
-          jti: decodedToken.jti,
-        }),
-      ))
-    ) {
-      throw new UnauthorizedException("Invalid login token");
+
+    const decodedToken = this.verify({
+      token,
+      secretOrPrivateKey: this.getSecret(tokenType, Number(audienceRaw)),
+    });
+
+    // Tokens issued before this rollout have no familyId: force re-login.
+    if (!decodedToken.sub || !decodedToken.familyId) {
+      throw authError("Please sign in again", AuthErrorCode.TOKEN_INVALID);
     }
 
-    const signatureLevel = await this.getSignatureLevel(
-      numDecodedTokenType,
-      numAudienceType,
-    );
-    const { accessSignature, refreshSignature } = (
-      await this.getTokenSignature(signatureLevel)
-    ).signatures;
-    // console.log({ accessSignature, refreshSignature });
-    const verifiedData = this.verify({
-      token,
-      secretOrPrivateKey:
-        tokenType === TokenType.REFRESH ? refreshSignature : accessSignature,
-    });
     const userAccount = await this.userRepo.findOne({
-      filter: { _id: verifiedData.sub },
+      filter: { _id: decodedToken.sub },
     });
     if (!userAccount) {
-      throw new UnauthorizedException("Not registered account");
+      throw authError("Not registered account", AuthErrorCode.TOKEN_INVALID);
     }
 
-    if (
-      userAccount.changedCredentialsTime &&
-      userAccount.changedCredentialsTime?.getTime() >=
-        ((decodedToken.iat as number) || 0) * 1000
-    ) {
-      throw new UnauthorizedException("Invalid login session");
-    }
-
+    await this.assertTokenActive(decodedToken, userAccount);
     return { userAccount, decodedToken };
   }
-  async createRevokeToken({
-    userId,
-    jti,
-    ttl,
-  }: {
-    userId: string | Types.ObjectId | undefined;
-    jti: string | undefined;
-    ttl: number | undefined;
-  }) {
+  ///////////////////////////// session revoked (single-device logout / reuse detection) & token older than the last "logout all" / password change
+  async assertTokenActive(
+    payload: IAuthTokenPayload,
+    user: HydratedDocument<IUser>,
+  ) {
+    if (await this.isFamilyRevoked(payload.sub, payload.familyId)) {
+      throw authError("Session was signed out", AuthErrorCode.SESSION_REVOKED);
+    }
+    if ((payload.ver ?? 0) < (user.tokenVersion ?? 0)) {
+      throw authError("Signed out everywhere", AuthErrorCode.SESSION_REVOKED);
+    }
+  }
+  async revokeFamily(userId: string | Types.ObjectId, familyId: string) {
     await this.redisRepo.redisSet({
-      key: this.redisRepo.redisRevokeTokenKey({ userId, jti }),
-      value: jti,
+      key: this.redisRepo.redisRevokedFamilyKey({ userId, familyId }),
+      value: "1",
+      ttl: REFRESH_TTL, // longest any token in the family can live
+    });
+  }
+  ///////////////////// Revocation
+
+  private async isFamilyRevoked(
+    userId: string | Types.ObjectId,
+    familyId: string,
+  ) {
+    const isRevoked = await this.redisRepo.redisGet(
+      this.redisRepo.redisRevokedFamilyKey({ userId, familyId }),
+    );
+    return isRevoked !== null && isRevoked !== undefined;
+  }
+  ///////////////////// single-device logout that works even if the token already expired & never throws: logging out a dead session is a success.
+  async revokeSessionByToken(token: string): Promise<void> {
+    const unverified = jwt.decode(token) as JwtPayload | null;
+    if (!Array.isArray(unverified?.aud) || unverified.aud.length < 2) return;
+    try {
+      const payload = this.verify({
+        token,
+        secretOrPrivateKey: this.getSecret(
+          Number(unverified.aud[0]) as TokenType,
+          Number(unverified.aud[1]),
+        ),
+        ignoreExpiration: true,
+      });
+      if (payload.sub && payload.familyId) {
+        await this.revokeFamily(payload.sub, payload.familyId);
+      }
+    } catch {
+      // nothing to revoke
+    }
+  }
+  async rotate(
+    user: HydratedDocument<IUser>,
+    { sub, jti, exp, familyId }: IAuthTokenPayload,
+    issuer: string,
+  ): Promise<IJwtTokenPair> {
+    const ttl = exp - Math.floor(Date.now() / 1000);
+    if (ttl <= 0) {
+      throw authError("Refresh token expired", AuthErrorCode.TOKEN_EXPIRED);
+    }
+
+    const usedKey = this.redisRepo.redisUsedRefreshKey({ userId: sub, jti });
+    const resultKey = this.redisRepo.redisRotationResultKey({
+      userId: sub,
+      jti,
+    });
+
+    // Atomic check-and-claim: exactly one concurrent request wins.
+    const claimed = await this.redisRepo.redisSetNX({
+      key: usedKey,
+      value: String(Date.now()),
       ttl,
     });
-    return;
+
+    if (claimed) {
+      try {
+        const tokens = await this.createLoginTokens(user, issuer, familyId);
+        await this.redisRepo.redisSet({
+          key: resultKey,
+          value: JSON.stringify(tokens),
+          ttl: ROTATION_GRACE,
+        });
+        return tokens;
+      } catch (err) {
+        await this.redisRepo.redisDelKeys([usedKey]);
+        throw err;
+      }
+    }
+
+    // Already used: harmless retry or replay attack?
+    const usedAtRaw = await this.redisRepo.redisGet(usedKey);
+    if (usedAtRaw === null || usedAtRaw === undefined) {
+      throw new ConflictException("Refresh in progress, retry shortly"); // winner rolled back between our two calls
+    }
+
+    if (Date.now() - Number(usedAtRaw) > ROTATION_GRACE * 1000) {
+      await this.revokeFamily(sub, familyId);
+      throw authError(
+        "Session ended for your security. Please sign in again.",
+        AuthErrorCode.REFRESH_REUSED,
+      );
+    }
+
+    // Inside the grace window: return the winner's result (wait up to ~2s).
+    for (let i = 0; i < 20; i++) {
+      const cached = await this.redisRepo.redisGet(resultKey);
+      if (cached) {
+        return (
+          typeof cached === "string" ? JSON.parse(cached) : cached
+        ) as IJwtTokenPair;
+      }
+      await sleep(100);
+    }
+    throw new ConflictException("Refresh in progress, retry shortly");
   }
 }

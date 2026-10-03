@@ -12,6 +12,7 @@ export interface IUser {
   bio?: string;
   friends?: Types.ObjectId[] | IUser[];
   DOB?: Date;
+  tokenVersion?: number;
   provider: number;
   confirmedAt?: Date;
   profileImage?: string;

@@ -90,6 +90,7 @@ class AuthService {
         confirmedAt: { $exists: true },
       },
     });
+
     if (!user) {
       throw new NotFoundException(
         "Please make sure to verify your account before login",
@@ -100,7 +101,9 @@ class AuthService {
       throw new BadRequestException("Invalid login credentials");
     }
 
-    user.phone = await decrypt(user.phone as string);
+    if (user.phone) {
+      user.phone = await decrypt(user.phone as string);
+    }
     ///////////////// handling 2FA
     // if (user.TFAEnabled) {
     //   await generateAndSendConfirmationOtp(user.email);

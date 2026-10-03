@@ -10,7 +10,7 @@ import { IUser } from "../common/interfaces";
 export const authorization = (accessRoles: RoleEnum[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!accessRoles.includes(req.user?.role)) {
-      throw new UnauthorizedException("Access denied");
+      throw new UnauthorizedException({ message: "Access denied" });
     }
     next();
   };

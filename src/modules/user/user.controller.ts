@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { Router } from "express";
-import { Types } from "mongoose";
 import { StorageApproachEnum, TokenType } from "../../common/enums";
+import { IAuthTokenPayload } from "../../common/interfaces/jwtToken.interface";
 import { successResponse } from "../../common/response";
 import { s3Service } from "../../common/services";
 import {
@@ -9,9 +9,9 @@ import {
   fileFieldValidation,
 } from "../../common/utils/multer";
 import { authentication, authorization } from "../../middleware";
+import { chatRouter } from "../chat";
 import { endpoint } from "./user.authorization";
 import userService from "./user.service";
-import { chatRouter } from "../chat";
 
 const router = Router();
 router.use("/:userId/chat", chatRouter);
@@ -33,7 +33,7 @@ router.post(
     const data = await userService.logout(
       req.body,
       req.user,
-      req.decoded as { jti: string; iat: number; sub: string | Types.ObjectId },
+      req.decoded as IAuthTokenPayload,
     );
     return successResponse({
       res,
@@ -51,7 +51,7 @@ router.post(
   async (req: Request, res: Response, next: NextFunction) => {
     const data = await userService.rotateToken(
       req.user,
-      req.decoded as { jti: string; iat: number; sub: string | Types.ObjectId },
+      req.decoded as IAuthTokenPayload,
       `${req.protocol}://${req.host}`,
     );
     return successResponse({
