@@ -132,7 +132,7 @@ export class TokenService {
 
     const jtId = randomUUID();
     const payload = {
-      sub: String(user._id),
+      sub: user,
       familyId,
       ver: user.tokenVersion ?? 0,
     };
@@ -294,7 +294,6 @@ export class TokenService {
       }
     }
 
-    // Already used: harmless retry or replay attack?
     const usedAtRaw = await this.redisRepo.redisGet(usedKey);
     if (usedAtRaw === null || usedAtRaw === undefined) {
       throw new ConflictException("Refresh in progress, retry shortly"); // winner rolled back between our two calls
